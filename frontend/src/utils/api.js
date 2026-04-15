@@ -1,4 +1,4 @@
-const API_BASE = (window.localStorage.getItem("notes_api_base") || "http://127.0.0.1:8000").replace(/\/+$/, "");
+const API_BASE = (window.localStorage.getItem("notes_api_base") || "https://major-project-63y1.onrender.com").replace(/\/+$/, "");
 const SESSION_KEY = "notes_auth_session";
 
 function readSession() {
