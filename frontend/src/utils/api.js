@@ -1,4 +1,17 @@
-const API_BASE = (window.localStorage.getItem("notes_api_base") || "https://major-project-63y1.onrender.com").replace(/\/+$/, "");
+const DEPLOYED_API_BASE = "https://major-project-63y1.onrender.com";
+
+function normalizeBaseUrl(value) {
+    return (value || "").trim().replace(/\/+$/, "");
+}
+
+function isLocalBackendUrl(value) {
+    return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(value);
+}
+
+const storedOverride = normalizeBaseUrl(window.localStorage.getItem("notes_api_base"));
+const API_BASE = storedOverride && !isLocalBackendUrl(storedOverride)
+    ? storedOverride
+    : DEPLOYED_API_BASE;
 const SESSION_KEY = "notes_auth_session";
 
 function readSession() {
