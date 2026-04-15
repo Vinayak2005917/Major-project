@@ -149,3 +149,9 @@ export async function createRewriteJob(noteId, instructions) {
 export async function getRewriteJob(jobId) {
     return requestJson(`/rewrite/${jobId}`);
 }
+
+export async function saveNoteToBucket(noteId) {
+    return requestJson(`/notes/${noteId}/save`, {
+        method: "POST",
+    });
+}

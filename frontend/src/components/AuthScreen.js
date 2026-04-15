@@ -30,7 +30,7 @@ export function AuthScreen({ onLogin, onSignup, loading, errorMessage }) {
         React.createElement("section", {
             className: "w-full max-w-md rounded-xl border border-zinc-800/80 bg-[#121212] p-6",
         },
-            React.createElement("h1", { className: "text-2xl font-semibold tracking-tight text-zinc-100" }, "Note Evolution"),
+            React.createElement("h1", { className: "text-2xl font-semibold tracking-tight text-zinc-100" }, "NeuroAdapt (prototype)"),
             React.createElement("p", { className: "mt-1 text-sm text-zinc-400" }, "Sign in to continue or create your account."),
             React.createElement("div", { className: "mt-5 inline-flex gap-1 rounded-lg border border-zinc-800 bg-zinc-900/70 p-1" },
                 React.createElement("button", {

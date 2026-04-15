@@ -13,6 +13,7 @@ import {
     getNote,
     getNoteVersions,
     getRewriteJob,
+    saveNoteToBucket,
     login,
     listNotes,
     me,
@@ -76,6 +77,7 @@ export function App() {
     const [isSidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1024);
     const [selectedVersionId, setSelectedVersionId] = useState(null);
     const [isAiRewriting, setAiRewriting] = useState(false);
+    const [isSavingBucket, setSavingBucket] = useState(false);
     const [isLoadingNotes, setLoadingNotes] = useState(true);
     const [errorMessage, setErrorMessage] = useState("");
     const saveTimerRef = useRef(null);
@@ -488,6 +490,39 @@ export function App() {
         }
     }
 
+    async function handleManualSave() {
+        if (!activeNote || isSavingBucket) {
+            return;
+        }
+
+        try {
+            setErrorMessage("");
+            setSavingBucket(true);
+
+            // Persist latest editor state to DB first, then save snapshot to storage bucket.
+            const updated = await updateNote(activeNote.id, {
+                title: activeNote.title,
+                content: activeNote.content,
+            });
+            const normalized = normalizeNote(updated);
+
+            setNotes((prevNotes) =>
+                prevNotes.map((note) => (note.id === normalized.id ? { ...note, ...normalized } : note))
+            );
+
+            lastSyncedRef.current[normalized.id] = {
+                title: normalized.title,
+                content: normalized.content,
+            };
+
+            await saveNoteToBucket(activeNote.id);
+        } catch (error) {
+            setErrorMessage(error && error.message ? error.message : "Failed to save note to bucket.");
+        } finally {
+            setSavingBucket(false);
+        }
+    }
+
     return React.createElement(
         "div",
         {
@@ -516,13 +551,19 @@ export function App() {
                 React.createElement("div", {
                     className: "min-w-0",
                 },
-                    React.createElement("p", { className: "truncate text-sm text-zinc-400" }, isLoadingNotes ? "Loading notes..." : "Idea Evolution"),
+                    React.createElement("p", { className: "truncate text-sm text-zinc-400" }, isLoadingNotes ? "Loading notes..." : "NeuroAdapt (prototype)"),
                     React.createElement("p", { className: "truncate text-xs text-zinc-500" }, getDisplayTitle(activeNote))
                 ),
                 React.createElement("button", {
                     type: "button",
+                    onClick: handleManualSave,
+                    disabled: !activeNote || isLoadingNotes || isSavingBucket,
+                    className: "ml-auto rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-300 transition hover:bg-zinc-800/70 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60",
+                }, isSavingBucket ? "Saving..." : "Save to Bucket"),
+                React.createElement("button", {
+                    type: "button",
                     onClick: handleLogout,
-                    className: "ml-auto rounded-md px-2 py-1 text-xs text-zinc-400 transition hover:bg-zinc-800/70 hover:text-zinc-200",
+                    className: "rounded-md px-2 py-1 text-xs text-zinc-400 transition hover:bg-zinc-800/70 hover:text-zinc-200",
                 }, "Logout")
                 ),
                 errorMessage

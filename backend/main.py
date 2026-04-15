@@ -1,6 +1,7 @@
 import os
 import re
 import uuid
+import json
 from datetime import datetime, timezone
 from typing import List, Optional
 import uvicorn
@@ -31,24 +32,26 @@ def parse_origins(raw_value: str) -> List[str]:
 
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "").strip()
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
 SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "Notes").strip() or "Notes"
-DEV_USER_ID = os.getenv("SUPABASE_DEV_USER_ID", "").strip()
 ALLOWED_ORIGINS = parse_origins(os.getenv("ALLOWED_ORIGINS", "*"))
 
+SUPABASE_BACKEND_KEY = SUPABASE_SERVICE_ROLE_KEY or SUPABASE_KEY
+
 supabase: Optional[Client] = None
-if SUPABASE_URL and SUPABASE_KEY:
-	supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+if SUPABASE_URL and SUPABASE_BACKEND_KEY:
+	supabase = create_client(SUPABASE_URL, SUPABASE_BACKEND_KEY)
 
 auth_supabase: Optional[Client] = None
 if SUPABASE_URL and (SUPABASE_ANON_KEY or SUPABASE_KEY):
 	auth_supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY or SUPABASE_KEY)
 
 app = FastAPI(
-	title="Notes Evolution API",
+	title="NeuroAdapt (prototype) API",
 	version="1.0.0",
-	description="FastAPI + Supabase backend for notes, versions, and AI rewrite jobs.",
+	description="NeuroAdapt (prototype): FastAPI + Supabase backend for notes, versions, AI rewrite jobs, and auth.",
 )
 
 app.add_middleware(
@@ -89,7 +92,7 @@ def require_supabase() -> Client:
 	if supabase is None:
 		raise HTTPException(
 			status_code=500,
-			detail="Supabase is not configured. Set SUPABASE_URL and SUPABASE_KEY in .env.",
+			detail="Supabase backend client is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (recommended) or SUPABASE_KEY in .env.",
 		)
 
 	return supabase
@@ -103,24 +106,6 @@ def require_auth_supabase() -> Client:
 		)
 
 	return auth_supabase
-
-
-def require_user_id(x_user_id: Optional[str]) -> str:
-	if not x_user_id and DEV_USER_ID:
-		x_user_id = DEV_USER_ID
-
-	if not x_user_id:
-		raise HTTPException(
-			status_code=400,
-			detail="Missing X-User-Id header. Provide a real Supabase auth.users.id UUID or set SUPABASE_DEV_USER_ID.",
-		)
-
-	try:
-		uuid.UUID(x_user_id)
-	except ValueError as exc:
-		raise HTTPException(status_code=400, detail="X-User-Id must be a valid UUID.") from exc
-
-	return x_user_id
 
 
 def parse_bearer_token(authorization: Optional[str]) -> Optional[str]:
@@ -138,26 +123,23 @@ def parse_bearer_token(authorization: Optional[str]) -> Optional[str]:
 	return token.strip()
 
 
-def resolve_user_id(
-	client: Client,
-	authorization: Optional[str],
-	x_user_id: Optional[str],
-) -> str:
+def resolve_user_id(authorization: Optional[str]) -> str:
+	client = require_auth_supabase()
 	bearer_token = parse_bearer_token(authorization)
-	if bearer_token:
-		try:
-			user_response = client.auth.get_user(bearer_token)
-		except Exception as exc:  # noqa: BLE001
-			raise HTTPException(status_code=401, detail="Invalid or expired access token.") from exc
+	if not bearer_token:
+		raise HTTPException(status_code=401, detail="Missing Authorization bearer token.")
 
-		user = getattr(user_response, "user", None)
-		user_id = getattr(user, "id", None)
-		if not user_id:
-			raise HTTPException(status_code=401, detail="Could not resolve user from access token.")
+	try:
+		user_response = client.auth.get_user(bearer_token)
+	except Exception as exc:  # noqa: BLE001
+		raise HTTPException(status_code=401, detail="Invalid or expired access token.") from exc
 
-		return str(user_id)
+	user = getattr(user_response, "user", None)
+	user_id = getattr(user, "id", None)
+	if not user_id:
+		raise HTTPException(status_code=401, detail="Could not resolve user from access token.")
 
-	return require_user_id(x_user_id)
+	return str(user_id)
 
 
 def validate_uuid(value: str, field_name: str) -> str:
@@ -183,6 +165,59 @@ def fetch_note_for_user(client: Client, note_id: str, user_id: str) -> dict:
 		raise HTTPException(status_code=404, detail="Note not found.")
 
 	return response.data[0]
+
+
+def upload_note_snapshot_to_bucket(client: Client, note: dict, user_id: str) -> dict:
+	if SUPABASE_BACKEND_KEY.startswith("sb_publishable_"):
+		raise HTTPException(
+			status_code=500,
+			detail="Backend storage writes require a service role/secret key. Set SUPABASE_SERVICE_ROLE_KEY in backend .env.",
+		)
+
+	note_id = str(note["id"])
+	timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+	base_path = f"{user_id}/{note_id}"
+	versioned_path = f"{base_path}/{timestamp}.json"
+	latest_path = f"{base_path}/latest.json"
+
+	payload = {
+		"note_id": note_id,
+		"user_id": user_id,
+		"title": note.get("title") or "Untitled",
+		"content": note.get("content") or "",
+		"is_archived": bool(note.get("is_archived")),
+		"is_deleted": bool(note.get("is_deleted")),
+		"updated_at": note.get("updated_at"),
+		"saved_at": utc_now_iso(),
+	}
+
+	data_bytes = json.dumps(payload, ensure_ascii=True, indent=2).encode("utf-8")
+	storage = client.storage.from_(SUPABASE_BUCKET)
+
+	# Supabase Python client has changed upload signature between versions; try both.
+	try:
+		storage.upload(versioned_path, data_bytes, {"content-type": "application/json", "upsert": "true"})
+	except TypeError:
+		storage.upload(
+			path=versioned_path,
+			file=data_bytes,
+			file_options={"content-type": "application/json", "upsert": "true"},
+		)
+
+	try:
+		storage.upload(latest_path, data_bytes, {"content-type": "application/json", "upsert": "true"})
+	except TypeError:
+		storage.upload(
+			path=latest_path,
+			file=data_bytes,
+			file_options={"content-type": "application/json", "upsert": "true"},
+		)
+
+	return {
+		"bucket": SUPABASE_BUCKET,
+		"path": latest_path,
+		"versioned_path": versioned_path,
+	}
 
 
 def sentence_case(value: str) -> str:
@@ -354,10 +389,9 @@ def auth_me(authorization: Optional[str] = Header(default=None, alias="Authoriza
 def create_note(
 	payload: NoteCreateIn,
 	authorization: Optional[str] = Header(default=None, alias="Authorization"),
-	x_user_id: Optional[str] = Header(default=None, alias="X-User-Id"),
 ) -> dict:
 	client = require_supabase()
-	user_id = resolve_user_id(client, authorization, x_user_id)
+	user_id = resolve_user_id(authorization)
 	now_iso = utc_now_iso()
 
 	note_data = {
@@ -378,7 +412,7 @@ def create_note(
 		if "notes_user_id_fkey" in error_text or "Key (user_id)=" in error_text:
 			raise HTTPException(
 				status_code=400,
-				detail="Invalid user_id. X-User-Id must be an existing UUID from Supabase auth.users.id.",
+				detail="Authenticated user is invalid. Authorization token user must exist in Supabase auth.users.",
 			) from exc
 
 		raise HTTPException(status_code=500, detail=f"Could not create note: {error_text}") from exc
@@ -394,10 +428,9 @@ def create_note(
 @app.get("/notes")
 def list_notes(
 	authorization: Optional[str] = Header(default=None, alias="Authorization"),
-	x_user_id: Optional[str] = Header(default=None, alias="X-User-Id"),
 ) -> list[dict]:
 	client = require_supabase()
-	user_id = resolve_user_id(client, authorization, x_user_id)
+	user_id = resolve_user_id(authorization)
 
 	response = (
 		client.table("notes")
@@ -414,10 +447,9 @@ def list_notes(
 def get_note(
 	note_id: str,
 	authorization: Optional[str] = Header(default=None, alias="Authorization"),
-	x_user_id: Optional[str] = Header(default=None, alias="X-User-Id"),
 ) -> dict:
 	client = require_supabase()
-	user_id = resolve_user_id(client, authorization, x_user_id)
+	user_id = resolve_user_id(authorization)
 	safe_note_id = validate_uuid(note_id, "note_id")
 	note = fetch_note_for_user(client, safe_note_id, user_id)
 	return note
@@ -428,10 +460,9 @@ def update_note(
 	note_id: str,
 	payload: NoteUpdateIn,
 	authorization: Optional[str] = Header(default=None, alias="Authorization"),
-	x_user_id: Optional[str] = Header(default=None, alias="X-User-Id"),
 ) -> dict:
 	client = require_supabase()
-	user_id = resolve_user_id(client, authorization, x_user_id)
+	user_id = resolve_user_id(authorization)
 	safe_note_id = validate_uuid(note_id, "note_id")
 	current_note = fetch_note_for_user(client, safe_note_id, user_id)
 
@@ -451,20 +482,15 @@ def update_note(
 	if len(updates) == 1:
 		raise HTTPException(status_code=400, detail="No fields to update.")
 
-	update_response = (
+	(
 		client.table("notes")
 		.update(updates)
 		.eq("id", safe_note_id)
 		.eq("user_id", user_id)
-		.select("*")
-		.limit(1)
 		.execute()
 	)
 
-	if not update_response.data:
-		raise HTTPException(status_code=404, detail="Note not found.")
-
-	updated_note = update_response.data[0]
+	updated_note = fetch_note_for_user(client, safe_note_id, user_id)
 
 	if content_changed:
 		client.table("note_versions").insert({"id": new_uuid(), "note_id": safe_note_id, "content": updated_note["content"]}).execute()
@@ -476,10 +502,9 @@ def update_note(
 def delete_note(
 	note_id: str,
 	authorization: Optional[str] = Header(default=None, alias="Authorization"),
-	x_user_id: Optional[str] = Header(default=None, alias="X-User-Id"),
 ) -> dict:
 	client = require_supabase()
-	user_id = resolve_user_id(client, authorization, x_user_id)
+	user_id = resolve_user_id(authorization)
 	safe_note_id = validate_uuid(note_id, "note_id")
 	fetch_note_for_user(client, safe_note_id, user_id)
 
@@ -498,11 +523,10 @@ def delete_note(
 def get_note_versions(
 	note_id: str,
 	authorization: Optional[str] = Header(default=None, alias="Authorization"),
-	x_user_id: Optional[str] = Header(default=None, alias="X-User-Id"),
 	version_id: Optional[str] = Query(default=None),
 ) -> dict:
 	client = require_supabase()
-	user_id = resolve_user_id(client, authorization, x_user_id)
+	user_id = resolve_user_id(authorization)
 	safe_note_id = validate_uuid(note_id, "note_id")
 	fetch_note_for_user(client, safe_note_id, user_id)
 
@@ -539,10 +563,9 @@ def create_rewrite_job(
 	background_tasks: BackgroundTasks,
 	payload: RewriteRequestIn,
 	authorization: Optional[str] = Header(default=None, alias="Authorization"),
-	x_user_id: Optional[str] = Header(default=None, alias="X-User-Id"),
 ) -> dict:
 	client = require_supabase()
-	user_id = resolve_user_id(client, authorization, x_user_id)
+	user_id = resolve_user_id(authorization)
 	safe_note_id = validate_uuid(note_id, "note_id")
 	note = fetch_note_for_user(client, safe_note_id, user_id)
 
@@ -585,10 +608,9 @@ def create_rewrite_job(
 def get_rewrite_job(
 	job_id: str,
 	authorization: Optional[str] = Header(default=None, alias="Authorization"),
-	x_user_id: Optional[str] = Header(default=None, alias="X-User-Id"),
 ) -> dict:
 	client = require_supabase()
-	user_id = resolve_user_id(client, authorization, x_user_id)
+	user_id = resolve_user_id(authorization)
 	safe_job_id = validate_uuid(job_id, "job_id")
 
 	job_response = client.table("ai_jobs").select("*").eq("id", safe_job_id).limit(1).execute()
@@ -618,6 +640,29 @@ def get_rewrite_job(
 		"done": (job.get("status") == "done"),
 		"output": job.get("output") or "",
 		"updated_at": job.get("updated_at"),
+	}
+
+
+@app.post("/notes/{note_id}/save")
+def save_note_to_bucket(
+	note_id: str,
+	authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> dict:
+	client = require_supabase()
+	user_id = resolve_user_id(authorization)
+	safe_note_id = validate_uuid(note_id, "note_id")
+	note = fetch_note_for_user(client, safe_note_id, user_id)
+
+	try:
+		result = upload_note_snapshot_to_bucket(client, note, user_id)
+	except Exception as exc:  # noqa: BLE001
+		raise HTTPException(status_code=500, detail=f"Failed to save note to bucket: {str(exc)}") from exc
+
+	return {
+		"ok": True,
+		"note_id": safe_note_id,
+		"saved_at": utc_now_iso(),
+		**result,
 	}
 
 if __name__ == "__main__":
