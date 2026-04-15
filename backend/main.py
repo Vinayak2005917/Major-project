@@ -49,9 +49,9 @@ if SUPABASE_URL and (SUPABASE_ANON_KEY or SUPABASE_KEY):
 	auth_supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY or SUPABASE_KEY)
 
 app = FastAPI(
-	title="NeuroAdapt (prototype) API",
+	title="Neurodapt (prototype) API",
 	version="1.0.0",
-	description="NeuroAdapt (prototype): FastAPI + Supabase backend for notes, versions, AI rewrite jobs, and auth.",
+	description="Neurodapt (prototype): FastAPI + Supabase backend for notes, versions, AI rewrite jobs, and auth.",
 )
 
 app.add_middleware(
