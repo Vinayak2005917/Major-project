@@ -1,8 +1,8 @@
 :root {
-    --scrollbar-size: 10px;
-    --scrollbar-track: #090909;
-    --scrollbar-thumb: #2f2f34;
-    --scrollbar-thumb-hover: #44444b;
+    --scrollbar-size: 6px;
+    --scrollbar-track: rgba(255, 255, 255, 0.02);
+    --scrollbar-thumb: rgba(255, 255, 255, 0.1);
+    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.2);
 }
 
 html,
@@ -13,11 +13,17 @@ body,
 
 body {
     margin: 0;
-    background: #0f0f0f;
+    overflow: hidden;
+    background: #0b0c0f;
 }
 
 .panel-scroll {
     scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 180ms ease;
+}
+
+.panel-scroll:hover {
     scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
@@ -27,14 +33,22 @@ body {
 }
 
 .panel-scroll::-webkit-scrollbar-track {
-    background: var(--scrollbar-track);
+    background: transparent;
     border-radius: 999px;
 }
 
 .panel-scroll::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, #3d3d44 0%, var(--scrollbar-thumb) 100%);
-    border: 2px solid var(--scrollbar-track);
+    background: transparent;
     border-radius: 999px;
+    transition: background-color 180ms ease;
+}
+
+.panel-scroll:hover::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+}
+
+.panel-scroll:hover::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
 }
 
 .panel-scroll::-webkit-scrollbar-thumb:hover {
@@ -52,6 +66,16 @@ body {
 
 .timeline-preview {
     word-break: break-word;
+}
+
+.editor-scroll-area {
+    position: relative;
+    mask-image: linear-gradient(to bottom, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
+}
+
+.editor-canvas {
+    min-height: 100%;
 }
 
 @keyframes timeline-in {

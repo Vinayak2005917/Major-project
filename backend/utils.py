@@ -14,8 +14,12 @@ SUPABASE_BACKEND_KEY = ""
 SUPABASE_BUCKET = "Notes"
 SUPABASE_CLIENT: Optional[Client] = None
 AUTH_SUPABASE_CLIENT: Optional[Client] = None
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openrouter/auto").strip()
+
+
+def get_openrouter_config() -> tuple[str, str]:
+	api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+	model = os.getenv("OPENROUTER_MODEL", "openrouter/auto").strip() or "openrouter/auto"
+	return api_key, model
 
 
 def configure_runtime(
@@ -213,7 +217,9 @@ def simulated_ai_rewrite(content: str, instructions: str = "") -> str:
 
 
 def rewrite_with_openrouter(content: str, instructions: str = "") -> str:
-	if not OPENROUTER_API_KEY:
+	openrouter_api_key, openrouter_model = get_openrouter_config()
+
+	if not openrouter_api_key:
 		raise RuntimeError("OPENROUTER_API_KEY is missing. Add it to backend environment variables.")
 
 	openrouter_referer = "http://localhost:8000"
@@ -230,7 +236,7 @@ def rewrite_with_openrouter(content: str, instructions: str = "") -> str:
 	)
 
 	body = {
-		"model": OPENROUTER_MODEL,
+		"model": openrouter_model,
 		"messages": [
 			{
 				"role": "system",
@@ -247,7 +253,7 @@ def rewrite_with_openrouter(content: str, instructions: str = "") -> str:
 		url="https://openrouter.ai/api/v1/chat/completions",
 		data=json.dumps(body).encode("utf-8"),
 		headers={
-			"Authorization": f"Bearer {OPENROUTER_API_KEY}",
+			"Authorization": f"Bearer {openrouter_api_key}",
 			"Content-Type": "application/json",
 			"HTTP-Referer": openrouter_referer,
 			"X-Title": openrouter_title,

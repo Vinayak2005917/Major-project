@@ -17,7 +17,7 @@ export function TimelinePanel({ versions, selectedVersionId, onSelectVersion, on
     const entries = Array.isArray(versions) ? versions : [];
 
     return React.createElement("aside", {
-        className: "hidden min-w-0 flex-col bg-[#101010] lg:flex",
+        className: "hidden min-h-0 min-w-0 flex-col border-l border-zinc-800/70 bg-[#0d0f12] lg:flex",
     },
         React.createElement("header", {
             className: "flex h-12 items-center gap-2 border-b border-zinc-800/70 px-4",

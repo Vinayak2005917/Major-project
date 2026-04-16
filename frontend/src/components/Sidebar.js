@@ -14,9 +14,9 @@ export function Sidebar({ isOpen, notes, activeId, onCreate, onSelect, onDelete 
     return React.createElement(
         "aside",
         {
-            className: `fixed inset-y-0 left-0 z-30 w-64 border-r border-zinc-800/80 bg-[#121212] transition-transform duration-200 ease-out lg:static ${isOpen ? "translate-x-0" : "-translate-x-full"}`,
+            className: `fixed inset-y-0 left-0 z-30 w-64 border-r border-zinc-800/80 bg-[#0d0f12] transition-transform duration-200 ease-out lg:static lg:h-full ${isOpen ? "translate-x-0" : "-translate-x-full"}`,
         },
-        React.createElement("div", { className: "flex h-full flex-col" },
+        React.createElement("div", { className: "flex h-full min-h-0 flex-col" },
             React.createElement("div", { className: "flex h-12 items-center px-3" },
                 React.createElement("button", {
                     type: "button",

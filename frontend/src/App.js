@@ -557,12 +557,12 @@ export function App() {
     "div",
     {
       className:
-        "relative h-screen overflow-hidden bg-[#0f0f0f] font-sans text-zinc-200 antialiased",
+        "app-shell relative h-screen overflow-hidden bg-[#0b0c0f] font-sans text-zinc-200 antialiased",
     },
     React.createElement(
       "div",
       {
-        className: `grid h-full transition-[grid-template-columns] duration-300 ease-out ${isSidebarOpen ? "lg:grid-cols-[15.5rem_minmax(0,1fr)_22rem]" : "lg:grid-cols-[0_minmax(0,1fr)_22rem]"}`,
+        className: `grid h-full overflow-hidden transition-[grid-template-columns] duration-300 ease-out ${isSidebarOpen ? "lg:grid-cols-[16rem_minmax(0,1fr)_22rem]" : "lg:grid-cols-[0_minmax(0,1fr)_22rem]"}`,
       },
       React.createElement(Sidebar, {
         isOpen: isSidebarOpen,
@@ -576,13 +576,13 @@ export function App() {
         "main",
         {
           className:
-            "relative flex min-w-0 flex-col border-r border-zinc-800/70",
+            "relative flex min-h-0 min-w-0 flex-col border-l border-r border-zinc-800/70 bg-[#0d0f12]",
         },
         React.createElement(
           "header",
           {
             className:
-              "flex h-12 items-center gap-2 border-b border-zinc-800/70 px-3 text-sm md:px-6",
+              "flex h-12 shrink-0 items-center gap-2 border-b border-zinc-800/70 bg-[#0e1116]/95 px-3 text-sm backdrop-blur-sm md:px-6",
           },
           React.createElement(
             "button",
@@ -618,9 +618,9 @@ export function App() {
               onClick: handleManualSave,
               disabled: !activeNote || isLoadingNotes || isSavingBucket,
               className:
-                "ml-auto rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-300 transition hover:bg-zinc-800/70 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60",
+                "ml-auto rounded-md border border-zinc-700/80 bg-zinc-900/60 px-2 py-1 text-xs text-zinc-300 transition hover:bg-zinc-800/70 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60",
             },
-            isSavingBucket ? "Saving..." : "Save to Bucket",
+            isSavingBucket ? "Saving..." : "Save",
           ),
           React.createElement(
             "button",
@@ -638,7 +638,7 @@ export function App() {
               "div",
               {
                 className:
-                  "border-b border-rose-500/30 bg-rose-500/10 px-4 py-2 text-xs text-rose-200",
+                  "shrink-0 border-b border-rose-500/30 bg-rose-500/10 px-4 py-2 text-xs text-rose-200",
               },
               errorMessage,
             )
