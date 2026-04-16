@@ -1,9 +1,5 @@
 import os
-import re
-import uuid
-import json
-from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Optional
 import uvicorn
 
 from dotenv import load_dotenv
@@ -11,24 +7,24 @@ from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from supabase import Client, create_client
+from utils import (
+	complete_rewrite_job,
+	configure_runtime,
+	fetch_note_for_user,
+	new_uuid,
+	parse_bearer_token,
+	parse_origins,
+	require_auth_supabase,
+	require_supabase,
+	resolve_user_id,
+	sentence_case,
+	simulated_ai_rewrite,
+	upload_note_snapshot_to_bucket,
+	utc_now_iso,
+	validate_uuid,
+)
 
 load_dotenv()
-
-
-def utc_now_iso() -> str:
-	return datetime.now(timezone.utc).isoformat()
-
-
-def new_uuid() -> str:
-	return str(uuid.uuid4())
-
-
-def parse_origins(raw_value: str) -> List[str]:
-	if not raw_value:
-		return ["*"]
-
-	values = [item.strip() for item in raw_value.split(",") if item.strip()]
-	return values if values else ["*"]
 
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
@@ -47,6 +43,13 @@ if SUPABASE_URL and SUPABASE_BACKEND_KEY:
 auth_supabase: Optional[Client] = None
 if SUPABASE_URL and (SUPABASE_ANON_KEY or SUPABASE_KEY):
 	auth_supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY or SUPABASE_KEY)
+
+configure_runtime(
+	supabase_client=supabase,
+	auth_supabase_client=auth_supabase,
+	supabase_backend_key=SUPABASE_BACKEND_KEY,
+	supabase_bucket=SUPABASE_BUCKET,
+)
 
 app = FastAPI(
 	title="Neurodapt (prototype) API",
@@ -86,228 +89,6 @@ class AuthSignUpIn(BaseModel):
 class AuthLoginIn(BaseModel):
 	email: str = Field(min_length=5, max_length=320)
 	password: str = Field(min_length=6, max_length=128)
-
-
-def require_supabase() -> Client:
-	if supabase is None:
-		raise HTTPException(
-			status_code=500,
-			detail="Supabase backend client is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (recommended) or SUPABASE_KEY in .env.",
-		)
-
-	return supabase
-
-
-def require_auth_supabase() -> Client:
-	if auth_supabase is None:
-		raise HTTPException(
-			status_code=500,
-			detail="Supabase auth client is not configured. Set SUPABASE_URL and SUPABASE_ANON_KEY (or SUPABASE_KEY).",
-		)
-
-	return auth_supabase
-
-
-def parse_bearer_token(authorization: Optional[str]) -> Optional[str]:
-	if not authorization:
-		return None
-
-	parts = authorization.strip().split(" ", 1)
-	if len(parts) != 2:
-		return None
-
-	scheme, token = parts
-	if scheme.lower() != "bearer" or not token.strip():
-		return None
-
-	return token.strip()
-
-
-def resolve_user_id(authorization: Optional[str]) -> str:
-	client = require_auth_supabase()
-	bearer_token = parse_bearer_token(authorization)
-	if not bearer_token:
-		raise HTTPException(status_code=401, detail="Missing Authorization bearer token.")
-
-	try:
-		user_response = client.auth.get_user(bearer_token)
-	except Exception as exc:  # noqa: BLE001
-		raise HTTPException(status_code=401, detail="Invalid or expired access token.") from exc
-
-	user = getattr(user_response, "user", None)
-	user_id = getattr(user, "id", None)
-	if not user_id:
-		raise HTTPException(status_code=401, detail="Could not resolve user from access token.")
-
-	return str(user_id)
-
-
-def validate_uuid(value: str, field_name: str) -> str:
-	try:
-		uuid.UUID(value)
-		return value
-	except ValueError as exc:
-		raise HTTPException(status_code=400, detail=f"{field_name} must be a valid UUID.") from exc
-
-
-def fetch_note_for_user(client: Client, note_id: str, user_id: str) -> dict:
-	response = (
-		client.table("notes")
-		.select("*")
-		.eq("id", note_id)
-		.eq("user_id", user_id)
-		.eq("is_deleted", False)
-		.limit(1)
-		.execute()
-	)
-
-	if not response.data:
-		raise HTTPException(status_code=404, detail="Note not found.")
-
-	return response.data[0]
-
-
-def upload_note_snapshot_to_bucket(client: Client, note: dict, user_id: str) -> dict:
-	if SUPABASE_BACKEND_KEY.startswith("sb_publishable_"):
-		raise HTTPException(
-			status_code=500,
-			detail="Backend storage writes require a service role/secret key. Set SUPABASE_SERVICE_ROLE_KEY in backend .env.",
-		)
-
-	note_id = str(note["id"])
-	timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-	base_path = f"{user_id}/{note_id}"
-	versioned_path = f"{base_path}/{timestamp}.json"
-	latest_path = f"{base_path}/latest.json"
-
-	payload = {
-		"note_id": note_id,
-		"user_id": user_id,
-		"title": note.get("title") or "Untitled",
-		"content": note.get("content") or "",
-		"is_archived": bool(note.get("is_archived")),
-		"is_deleted": bool(note.get("is_deleted")),
-		"updated_at": note.get("updated_at"),
-		"saved_at": utc_now_iso(),
-	}
-
-	data_bytes = json.dumps(payload, ensure_ascii=True, indent=2).encode("utf-8")
-	storage = client.storage.from_(SUPABASE_BUCKET)
-
-	# Supabase Python client has changed upload signature between versions; try both.
-	try:
-		storage.upload(versioned_path, data_bytes, {"content-type": "application/json", "upsert": "true"})
-	except TypeError:
-		storage.upload(
-			path=versioned_path,
-			file=data_bytes,
-			file_options={"content-type": "application/json", "upsert": "true"},
-		)
-
-	try:
-		storage.upload(latest_path, data_bytes, {"content-type": "application/json", "upsert": "true"})
-	except TypeError:
-		storage.upload(
-			path=latest_path,
-			file=data_bytes,
-			file_options={"content-type": "application/json", "upsert": "true"},
-		)
-
-	return {
-		"bucket": SUPABASE_BUCKET,
-		"path": latest_path,
-		"versioned_path": versioned_path,
-	}
-
-
-def sentence_case(value: str) -> str:
-	cleaned = value.strip()
-	if not cleaned:
-		return ""
-
-	return f"{cleaned[0].upper()}{cleaned[1:]}"
-
-
-def simulated_ai_rewrite(content: str, instructions: str = "") -> str:
-	paragraphs = [chunk.strip() for chunk in re.split(r"\n\s*\n", content or "") if chunk.strip()]
-
-	if not paragraphs:
-		base = "Capture one clear idea, one supporting detail, and one concrete next action."
-		return f"{base}\n\n{instructions.strip()}" if instructions.strip() else base
-
-	polished: list[str] = []
-	for paragraph in paragraphs:
-		single_line = re.sub(r"\s+", " ", paragraph).strip()
-		refined = sentence_case(single_line)
-		if not re.search(r"[.!?]$", refined):
-			refined = f"{refined}."
-		polished.append(refined)
-
-	if instructions and instructions.strip():
-		polished.append(f"AI focus: {instructions.strip()}")
-
-	return "\n\n".join(polished)
-
-
-def complete_rewrite_job(job_id: str, note_id: str, user_id: str, instructions: str = "") -> None:
-	client = require_supabase()
-
-	try:
-		note = fetch_note_for_user(client, note_id, user_id)
-		updated_content = simulated_ai_rewrite(note.get("content") or "", instructions)
-		updated_title = (note.get("title") or "Untitled").strip() or "Untitled"
-		now_iso = utc_now_iso()
-
-		(
-			client.table("notes")
-			.update(
-				{
-					"title": updated_title,
-					"content": updated_content,
-					"updated_at": now_iso,
-				}
-			)
-			.eq("id", note_id)
-			.eq("user_id", user_id)
-			.execute()
-		)
-
-		client.table("note_versions").insert({"id": new_uuid(), "note_id": note_id, "content": updated_content}).execute()
-
-		(
-			client.table("ai_jobs")
-			.update(
-				{
-					"status": "done",
-					"output": updated_content,
-					"updated_at": now_iso,
-				}
-			)
-			.eq("id", job_id)
-			.execute()
-		)
-	except Exception as exc:  # noqa: BLE001
-		(
-			client.table("ai_jobs")
-			.update(
-				{
-					"status": "failed",
-					"output": str(exc),
-					"updated_at": utc_now_iso(),
-				}
-			)
-			.eq("id", job_id)
-			.execute()
-		)
-
-
-@app.get("/health")
-def health() -> dict:
-	return {
-		"ok": True,
-		"supabase_configured": bool(SUPABASE_URL and SUPABASE_KEY),
-		"bucket": SUPABASE_BUCKET,
-	}
 
 
 @app.post("/auth/signup")
@@ -664,6 +445,15 @@ def save_note_to_bucket(
 		"saved_at": utc_now_iso(),
 		**result,
 	}
+
+
+@app.get("/")
+def root():
+    return {"message": "API is running"}
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

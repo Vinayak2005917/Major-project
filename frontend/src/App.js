@@ -14,6 +14,7 @@ import {
   clearAuthSession,
   createNote,
   createRewriteJob,
+  deleteNote,
   getStoredSession,
   getNote,
   getNoteVersions,
@@ -90,7 +91,6 @@ export function App() {
   const [isSavingBucket, setSavingBucket] = useState(false);
   const [isLoadingNotes, setLoadingNotes] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
-  const saveTimerRef = useRef(null);
   const lastSyncedRef = useRef({});
 
   const sortedNotes = useMemo(
@@ -206,80 +206,6 @@ export function App() {
     };
   }, [session ? session.access_token : ""]);
 
-  useEffect(
-    () => () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-      }
-    },
-    [],
-  );
-
-  useEffect(() => {
-    if (!session || !session.access_token) {
-      return;
-    }
-
-    if (!activeNote || selectedVersion || isAiRewriting) {
-      return;
-    }
-
-    const synced = lastSyncedRef.current[activeNote.id];
-    if (
-      synced &&
-      synced.title === activeNote.title &&
-      synced.content === activeNote.content
-    ) {
-      return;
-    }
-
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-    }
-
-    saveTimerRef.current = window.setTimeout(async () => {
-      try {
-        const updated = await updateNote(activeNote.id, {
-          title: activeNote.title,
-          content: activeNote.content,
-        });
-        const normalized = normalizeNote(updated);
-
-        setNotes((prevNotes) =>
-          prevNotes.map((note) =>
-            note.id === normalized.id ? { ...note, ...normalized } : note,
-          ),
-        );
-
-        lastSyncedRef.current[normalized.id] = {
-          title: normalized.title,
-          content: normalized.content,
-        };
-
-        if (!synced || synced.content !== normalized.content) {
-          await fetchAndStoreVersions(normalized.id, normalized.title, false);
-        }
-      } catch (error) {
-        setErrorMessage(
-          error && error.message ? error.message : "Failed to sync note.",
-        );
-      }
-    }, 650);
-
-    return () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-      }
-    };
-  }, [
-    activeNote ? activeNote.id : "",
-    activeNote ? activeNote.title : "",
-    activeNote ? activeNote.content : "",
-    selectedVersion,
-    isAiRewriting,
-    session ? session.access_token : "",
-  ]);
-
   async function handleLogin(email, password) {
     try {
       setAuthBusy(true);
@@ -390,6 +316,52 @@ export function App() {
     }
   }
 
+  async function handleDeleteNote(noteId) {
+    const target = notes.find((entry) => entry.id === noteId);
+    if (!target) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete \"${getDisplayTitle(target)}\"? This cannot be undone.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setErrorMessage("");
+      await deleteNote(noteId);
+
+      setNotes((prevNotes) => prevNotes.filter((note) => note.id !== noteId));
+      setVersionsByNote((prevState) => {
+        const nextState = { ...prevState };
+        delete nextState[noteId];
+        return nextState;
+      });
+      delete lastSyncedRef.current[noteId];
+
+      if (activeId === noteId) {
+        const remaining = sortedNotes.filter((note) => note.id !== noteId);
+        const nextActive = remaining[0] ? remaining[0].id : null;
+
+        setActiveId(nextActive);
+        setSelectedVersionId(null);
+
+        if (nextActive && !versionsByNote[nextActive]) {
+          const fallback = remaining.find((note) => note.id === nextActive);
+          if (fallback) {
+            await fetchAndStoreVersions(nextActive, fallback.title, false);
+          }
+        }
+      }
+    } catch (error) {
+      setErrorMessage(
+        error && error.message ? error.message : "Failed to delete note.",
+      );
+    }
+  }
+
   function patchActiveNote(nextStateFactory) {
     setNotes((prevNotes) =>
       prevNotes.map((note) => {
@@ -467,8 +439,6 @@ export function App() {
         title: normalized.title,
         content: normalized.content,
       };
-
-      await fetchAndStoreVersions(normalized.id, normalized.title, false);
     } catch (error) {
       setErrorMessage(
         error && error.message ? error.message : "Failed to restore version.",
@@ -571,6 +541,7 @@ export function App() {
       };
 
       await saveNoteToBucket(activeNote.id);
+      await fetchAndStoreVersions(normalized.id, normalized.title, false);
     } catch (error) {
       setErrorMessage(
         error && error.message
@@ -599,6 +570,7 @@ export function App() {
         activeId: activeNote ? activeNote.id : null,
         onCreate: handleCreateNote,
         onSelect: handleSelectNote,
+        onDelete: handleDeleteNote,
       }),
       React.createElement(
         "main",
