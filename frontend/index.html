@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>NeuroAdapt (prototype)</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com" />
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+	<script src="https://cdn.tailwindcss.com"></script>
+	<script>
+		tailwind.config = {
+			theme: {
+				extend: {
+					fontFamily: {
+						sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
+					},
+				},
+			},
+		};
+	</script>
+	<link rel="stylesheet" href="./src/styles/app.css" />
+</head>
+<body>
+	<div id="root"></div>
+	<script>
+		if (window.location.protocol === "file:") {
+			document.getElementById("root").innerHTML = "<div style='min-height:100vh;display:flex;align-items:center;justify-content:center;background:#191919;color:#f1f1f1;font-family:Segoe UI, Noto Sans, sans-serif;padding:24px;'><div style='max-width:720px;border:1px solid #2f2f2f;background:#1f1f1f;border-radius:12px;padding:16px;line-height:1.6;'><h1 style='margin:0 0 8px;font-size:1.1rem;'>Open with a local server</h1><p style='margin:0;color:#b4b4b4;'>This React app uses ES modules and may appear blank when opened directly from file://. Serve the frontend folder through localhost (for example with Python: <strong>python -m http.server 5500</strong>) and open <strong>http://localhost:5500</strong>.</p></div></div>";
+		}
+	</script>
+	<script type="module" src="./src/main.js"></script>
+</body>
+</html>
