@@ -4,3 +4,4 @@
 /backend/.env
 /backend/.env.example
 /frontend/node_modules
+/frontend/dist
