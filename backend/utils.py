@@ -1,7 +1,10 @@
+import os
 import json
 import re
 import uuid
 from datetime import datetime, timezone
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 from typing import Optional
 
 from fastapi import HTTPException
@@ -11,6 +14,8 @@ SUPABASE_BACKEND_KEY = ""
 SUPABASE_BUCKET = "Notes"
 SUPABASE_CLIENT: Optional[Client] = None
 AUTH_SUPABASE_CLIENT: Optional[Client] = None
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openrouter/auto").strip()
 
 
 def configure_runtime(
@@ -207,12 +212,79 @@ def simulated_ai_rewrite(content: str, instructions: str = "") -> str:
 	return "\n\n".join(polished)
 
 
+def rewrite_with_openrouter(content: str, instructions: str = "") -> str:
+	if not OPENROUTER_API_KEY:
+		raise RuntimeError("OPENROUTER_API_KEY is missing. Add it to backend environment variables.")
+
+	openrouter_referer = "http://localhost:8000"
+	openrouter_title = "Neurodapt"
+
+	safe_content = (content or "").strip()
+	prompt_text = (instructions or "").strip()
+
+	user_prompt = (
+		"Rewrite the following note so it is clearer and more concise while preserving meaning. "
+		"Keep paragraph structure if present. Return only the improved note text.\n\n"
+		f"User instructions: {prompt_text if prompt_text else 'No extra instructions.'}\n\n"
+		f"Original note:\n{safe_content if safe_content else '[empty note]'}"
+	)
+
+	body = {
+		"model": OPENROUTER_MODEL,
+		"messages": [
+			{
+				"role": "system",
+				"content": "You are a precise writing assistant. Improve clarity, grammar, and flow without adding new facts.",
+			},
+			{
+				"role": "user",
+				"content": user_prompt,
+			},
+		],
+	}
+
+	req = urllib_request.Request(
+		url="https://openrouter.ai/api/v1/chat/completions",
+		data=json.dumps(body).encode("utf-8"),
+		headers={
+			"Authorization": f"Bearer {OPENROUTER_API_KEY}",
+			"Content-Type": "application/json",
+			"HTTP-Referer": openrouter_referer,
+			"X-Title": openrouter_title,
+		},
+		method="POST",
+	)
+
+	try:
+		with urllib_request.urlopen(req, timeout=45) as response:  # noqa: S310
+			raw = response.read().decode("utf-8")
+	except urllib_error.HTTPError as exc:
+		error_raw = exc.read().decode("utf-8", errors="replace")
+		raise RuntimeError(f"OpenRouter HTTP {exc.code}: {error_raw}") from exc
+	except urllib_error.URLError as exc:
+		raise RuntimeError(f"OpenRouter network error: {exc.reason}") from exc
+
+	parsed = json.loads(raw)
+	choices = parsed.get("choices") if isinstance(parsed, dict) else None
+	if not isinstance(choices, list) or not choices:
+		raise RuntimeError("OpenRouter returned no choices.")
+
+	message = choices[0].get("message") if isinstance(choices[0], dict) else None
+	content_text = message.get("content") if isinstance(message, dict) else None
+	final_text = (content_text or "").strip()
+
+	if not final_text:
+		raise RuntimeError("OpenRouter returned an empty rewrite.")
+
+	return final_text
+
+
 def complete_rewrite_job(job_id: str, note_id: str, user_id: str, instructions: str = "") -> None:
 	client = require_supabase()
 
 	try:
 		note = fetch_note_for_user(client, note_id, user_id)
-		updated_content = simulated_ai_rewrite(note.get("content") or "", instructions)
+		updated_content = rewrite_with_openrouter(note.get("content") or "", instructions)
 		updated_title = (note.get("title") or "Untitled").strip() or "Untitled"
 		now_iso = utc_now_iso()
 

@@ -1,0 +1,67 @@
+:root {
+    --scrollbar-size: 10px;
+    --scrollbar-track: #090909;
+    --scrollbar-thumb: #2f2f34;
+    --scrollbar-thumb-hover: #44444b;
+}
+
+html,
+body,
+#root {
+    height: 100%;
+}
+
+body {
+    margin: 0;
+    background: #0f0f0f;
+}
+
+.panel-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+.panel-scroll::-webkit-scrollbar {
+    width: var(--scrollbar-size);
+    height: var(--scrollbar-size);
+}
+
+.panel-scroll::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+    border-radius: 999px;
+}
+
+.panel-scroll::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #3d3d44 0%, var(--scrollbar-thumb) 100%);
+    border: 2px solid var(--scrollbar-track);
+    border-radius: 999px;
+}
+
+.panel-scroll::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+}
+
+.panel-scroll::-webkit-scrollbar-corner {
+    background: var(--scrollbar-track);
+}
+
+.timeline-entry {
+    opacity: 0;
+    animation: timeline-in 220ms ease-out forwards;
+}
+
+.timeline-preview {
+    word-break: break-word;
+}
+
+@keyframes timeline-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

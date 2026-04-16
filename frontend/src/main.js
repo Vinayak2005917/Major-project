@@ -1,15 +1,28 @@
-import React from "https://esm.sh/react@18.2.0?target=es2019";
-import { createRoot } from "https://esm.sh/react-dom@18.2.0/client?target=es2019";
-
 const rootElement = document.getElementById("root");
 
 async function bootstrap() {
 	try {
+		if (!rootElement) {
+			throw new Error("Missing #root element in index.html.");
+		}
+
+		const reactModule = await import("https://esm.sh/react@18.2.0?target=es2019");
+		const reactDomClient = await import("https://esm.sh/react-dom@18.2.0/client?target=es2019");
+		const React = reactModule && reactModule.default ? reactModule.default : reactModule;
+		const createRoot = reactDomClient.createRoot;
+
+		if (!React || typeof createRoot !== "function") {
+			throw new Error("Failed to load React runtime from CDN.");
+		}
+
 		const { App } = await import("./App.js");
 		createRoot(rootElement).render(React.createElement(App));
 	} catch (error) {
 		console.error(error);
 		const errorMessage = error && error.message ? error.message : String(error);
+		if (!rootElement) {
+			return;
+		}
 
 		rootElement.innerHTML = `
 			<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#191919;color:#f1f1f1;font-family:Segoe UI, Noto Sans, sans-serif;padding:24px;">
