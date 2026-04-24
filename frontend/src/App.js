@@ -179,11 +179,6 @@ export function App() {
 
       try {
         await me();
-        if (!alive) {
-          return;
-        }
-
-        await loadNotesForCurrentSession();
       } catch (error) {
         if (!alive) {
           return;
@@ -191,10 +186,32 @@ export function App() {
 
         clearAuthSession();
         setSession(null);
+        setLoadingNotes(false);
         setAuthError(
           error && error.message
             ? error.message
             : "Session expired. Please login again.",
+        );
+
+        return;
+      }
+
+      if (!alive) {
+        return;
+      }
+
+      try {
+        await loadNotesForCurrentSession();
+      } catch (error) {
+        if (!alive) {
+          return;
+        }
+
+        setLoadingNotes(false);
+        setErrorMessage(
+          error && error.message
+            ? error.message
+            : "Failed to load notes. Please retry.",
         );
       }
     }

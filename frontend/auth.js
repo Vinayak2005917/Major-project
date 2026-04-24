@@ -11,15 +11,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const originalText = submitBtn.innerText;
                 submitBtn.innerText = "Please wait...";
                 submitBtn.disabled = true;
-                
-                // Simulate authentication / network request
-                setTimeout(() => {
-                    submitBtn.innerText = originalText;
-                    submitBtn.disabled = false;
-                    
-                    // Redirect back to main dashboard (for prototype/demo purposes)
-                    window.location.href = 'index.html';
-                }, 1500);
             }
         });
     });

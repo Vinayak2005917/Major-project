@@ -1,5 +1,5 @@
-const DEPLOYED_API_BASE = "https://major-project-63y1.onrender.com";
-const LOCAL_API_BASE = "http://localhost:8000";
+const DEPLOYED_API_BASE = "https://vertigo-reseller-upload.ngrok-free.dev";
+const LOCAL_API_BASE = "http://localhost:8005";
 
 function normalizeBaseUrl(value) {
     return (value || "").trim().replace(/\/+$/, "");
@@ -10,9 +10,11 @@ function isLocalBackendUrl(value) {
 }
 
 const storedOverride = normalizeBaseUrl(window.localStorage.getItem("notes_api_base"));
-const API_BASE = storedOverride && !isLocalBackendUrl(storedOverride)
-    ? storedOverride
-    : DEPLOYED_API_BASE;
+const API_BASE = normalizeBaseUrl(
+    storedOverride && !isLocalBackendUrl(storedOverride)
+        ? storedOverride
+        : DEPLOYED_API_BASE,
+);
 const SESSION_KEY = "notes_auth_session";
 
 function readSession() {
