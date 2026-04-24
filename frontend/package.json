@@ -1,33 +1,14 @@
 {
-  "name": "frontend",
+  "name": "frontend-web",
   "version": "1.0.0",
-  "description": "",
-  "main": "electron.js",
-  "type": "commonjs",
+  "private": true,
   "scripts": {
-    "start": "electron .",
-    "dev": "concurrently \"npm start\"",
-    "build": "electron-builder"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "dependencies": {},
   "devDependencies": {
-    "concurrently": "^9.2.1",
-    "electron": "^41.2.1",
-    "electron-builder": "^26.8.1"
-  },
-  "build": {
-    "appId": "com.frontend.app",
-    "productName": "FrontendApp",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "**/*"
-    ],
-    "win": {
-      "target": "nsis"
-    }
+    "vite": "^5.0.0"
   }
 }
