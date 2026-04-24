@@ -65,7 +65,7 @@ app.add_middleware(
 	allow_headers=["*"],
 )
 
-
+print(ALLOWED_ORIGINS)
 class NoteCreateIn(BaseModel):
 	title: str = Field(default="Untitled", max_length=200)
 	content: str = Field(default="")

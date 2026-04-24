@@ -1,20 +1,6 @@
 const DEPLOYED_API_BASE = "https://vertigo-reseller-upload.ngrok-free.dev";
-const LOCAL_API_BASE = "http://localhost:8005";
 
-function normalizeBaseUrl(value) {
-    return (value || "").trim().replace(/\/+$/, "");
-}
-
-function isLocalBackendUrl(value) {
-    return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(value);
-}
-
-const storedOverride = normalizeBaseUrl(window.localStorage.getItem("notes_api_base"));
-const API_BASE = normalizeBaseUrl(
-    storedOverride && !isLocalBackendUrl(storedOverride)
-        ? storedOverride
-        : DEPLOYED_API_BASE,
-);
+const API_BASE = DEPLOYED_API_BASE;
 const SESSION_KEY = "notes_auth_session";
 
 function readSession() {
@@ -91,6 +77,7 @@ function ensureAuthenticatedUnlessSkipped(skipAuth) {
 function buildHeaders(settings, token) {
     const base = {
         "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "true",
         ...(settings.headers || {}),
     };
 
@@ -109,31 +96,7 @@ async function requestJson(path, options) {
         headers: buildHeaders(settings, token),
     };
 
-    const targets = [API_BASE];
-
-    if (API_BASE !== LOCAL_API_BASE) {
-        targets.push(LOCAL_API_BASE);
-    }
-
-    let response;
-    let lastError = null;
-
-    for (let index = 0; index < targets.length; index += 1) {
-        try {
-            response = await fetch(`${targets[index]}${path}`, requestOptions);
-            break;
-        } catch (error) {
-            lastError = error;
-
-            if (!(error instanceof TypeError) || index === targets.length - 1) {
-                throw error;
-            }
-        }
-    }
-
-    if (!response) {
-        throw lastError || new Error("Request failed before reaching backend.");
-    }
+    const response = await fetch(`${API_BASE}${path}`, requestOptions);
 
     const raw = await response.text();
     let payload = {};
