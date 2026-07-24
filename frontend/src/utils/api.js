@@ -3,6 +3,29 @@ const DEPLOYED_API_BASE = "https://vertigo-reseller-upload.ngrok-free.dev";
 const API_BASE = DEPLOYED_API_BASE;
 const SESSION_KEY = "notes_auth_session";
 
+// --- Direct AI config (calls aicredits.in from the browser) ---
+const AI_API_KEY =
+	"sk-live-72cea74d30e0997953bb2fb353412fca8cbbf04d826468416c4aec87893a6937";
+const AI_BASE_URL = "https://api.aicredits.in/v1";
+const AI_MODEL = "inception/mercury-2";
+
+const AI_SYSTEM_PROMPT =
+	"You are a precise writing assistant. Improve clarity, grammar, and flow without adding new facts. " +
+	"Format the output in clean Markdown. Use minimal bullet points\u2014only use them if the original " +
+	"content already has a list-like structure. Keep paragraph structure. Return only the improved note text.";
+
+function buildAiUserPrompt(content, instructions) {
+	const promptText = (instructions || "").trim();
+	return (
+		"Rewrite the following note so it is clearer and more concise while preserving meaning. " +
+		"Format the output in Markdown. Use minimal bullet points\u2014only use them if the original " +
+		"content already has a list-like structure. Keep paragraph structure if present. " +
+		"Return only the improved note text.\n\n" +
+		`User instructions: ${promptText || "No extra instructions."}\n\n` +
+		`Original note:\n${(content || "").trim() || "[empty note]"}`
+	);
+}
+
 function readSession() {
     const raw = window.localStorage.getItem(SESSION_KEY);
 
@@ -172,63 +195,63 @@ export async function deleteVersion(noteId, versionId) {
     });
 }
 
-export async function streamRewrite(noteId, instructions, callbacks, signal) {
-    const token = getAccessTokenOrNull();
-    if (!token) throw new Error("Not authenticated.");
+export async function directStreamRewrite(content, instructions, callbacks, signal) {
+	const response = await fetch(`${AI_BASE_URL}/chat/completions`, {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			Authorization: `Bearer ${AI_API_KEY}`,
+		},
+		body: JSON.stringify({
+			model: AI_MODEL,
+			messages: [
+				{ role: "system", content: AI_SYSTEM_PROMPT },
+				{ role: "user", content: buildAiUserPrompt(content, instructions) },
+			],
+			stream: true,
+		}),
+		signal,
+	});
 
-    const response = await fetch(`${API_BASE}/notes/${noteId}/rewrite/stream`, {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-            "ngrok-skip-browser-warning": "true",
-        },
-        body: JSON.stringify({ instructions: instructions || "" }),
-        signal,
-    });
+	if (!response.ok) {
+		const text = await response.text();
+		throw new Error(`AI API error (${response.status}): ${text}`);
+	}
 
-    if (!response.ok) {
-        const text = await response.text();
-        try {
-            const parsed = JSON.parse(text);
-            throw new Error(parsed.detail || text);
-        } catch (e) {
-            if (e instanceof SyntaxError) throw new Error(text);
-            throw e;
-        }
-    }
+	const reader = response.body.getReader();
+	const decoder = new TextDecoder();
+	let buffer = "";
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) break;
 
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+		buffer += decoder.decode(value, { stream: true });
+		const lines = buffer.split("\n");
+		buffer = lines.pop() || "";
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
+		for (const line of lines) {
+			if (line.startsWith("data: ")) {
+				const raw = line.slice(6).trim();
+				if (!raw || raw === "[DONE]") continue;
+				try {
+					const parsed = JSON.parse(raw);
+					const delta = parsed.choices?.[0]?.delta;
+					const token = delta?.content || "";
+					if (token && callbacks.onToken) {
+						callbacks.onToken(token);
+					}
+				} catch {
+					// skip malformed lines
+				}
+			}
+		}
+	}
+}
 
-        for (const line of lines) {
-            if (line.startsWith("data: ")) {
-                const raw = line.slice(6).trim();
-                if (!raw) continue;
-                try {
-                    const parsed = JSON.parse(raw);
-                    if (parsed.token && callbacks.onToken) {
-                        callbacks.onToken(parsed.token);
-                    } else if (parsed.done && callbacks.onDone) {
-                        await callbacks.onDone(parsed);
-                        return;
-                    } else if (parsed.error) {
-                        throw new Error(parsed.message || "Rewrite failed.");
-                    }
-                } catch (e) {
-                    if (e instanceof SyntaxError) continue;
-                    throw e;
-                }
-            }
-        }
-    }
+export async function persistRewrite(noteId, title, content) {
+	return requestJson(`/notes/${noteId}`, {
+		method: "PUT",
+		body: JSON.stringify({ title, content }),
+	});
 }

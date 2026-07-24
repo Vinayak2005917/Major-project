@@ -15,16 +15,17 @@ import {
   createNote,
   deleteNote,
   deleteVersion,
+  directStreamRewrite,
   getStoredSession,
   getNote,
   getNoteVersions,
+  persistRewrite,
   saveNoteToBucket,
   login,
   listNotes,
   me,
   setAuthSession,
   signup,
-  streamRewrite,
   updateNote,
 } from "./utils/api.js";
 
@@ -509,6 +510,7 @@ export function App() {
 
     const noteId = activeNote.id;
     const noteTitle = activeNote.title;
+    const noteContent = activeNote.content;
     abortControllerRef.current = new AbortController();
     let accumulated = "";
     const startTs = performance.now();
@@ -516,8 +518,8 @@ export function App() {
 
     try {
       setStreaming(true);
-      await streamRewrite(
-        noteId,
+      await directStreamRewrite(
+        noteContent,
         "",
         {
           onToken: (token) => {
@@ -535,16 +537,18 @@ export function App() {
               ),
             );
           },
-          onDone: async () => {
-            lastSyncedRef.current[noteId] = {
-              title: noteTitle,
-              content: accumulated,
-            };
-            await fetchAndStoreVersions(noteId, noteTitle, true);
-          },
         },
         abortControllerRef.current.signal,
       );
+
+      // Persist to backend after stream completes
+      lastSyncedRef.current[noteId] = {
+        title: noteTitle,
+        content: accumulated,
+      };
+
+      await persistRewrite(noteId, noteTitle, accumulated);
+      await fetchAndStoreVersions(noteId, noteTitle, true);
     } catch (error) {
       if (error && error.name === "AbortError") {
         return;
