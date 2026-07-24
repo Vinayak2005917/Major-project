@@ -88,6 +88,7 @@ export function App() {
   );
   const [selectedVersionId, setSelectedVersionId] = useState(null);
   const [isAiRewriting, setAiRewriting] = useState(false);
+  const isAiRewritingRef = useRef(false);
   const [isSavingBucket, setSavingBucket] = useState(false);
   const [isLoadingNotes, setLoadingNotes] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -464,12 +465,13 @@ export function App() {
   }
 
   async function handleAiRewrite() {
-    if (!activeNote || isAiRewriting) {
+    if (!activeNote || isAiRewritingRef.current) {
       return;
     }
 
     setErrorMessage("");
     setSelectedVersionId(null);
+    isAiRewritingRef.current = true;
     setAiRewriting(true);
 
     try {
@@ -526,6 +528,7 @@ export function App() {
         error && error.message ? error.message : "AI rewrite failed.",
       );
     } finally {
+      isAiRewritingRef.current = false;
       setAiRewriting(false);
     }
   }
