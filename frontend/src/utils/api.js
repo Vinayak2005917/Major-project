@@ -11,15 +11,12 @@ const AI_MODEL = "inception/mercury-2";
 
 const AI_SYSTEM_PROMPT =
 	"You are a precise writing assistant. Improve clarity, grammar, and flow without adding new facts. " +
-	"Format the output in clean Markdown. Use minimal bullet points\u2014only use them if the original " +
+	"Format the output in clean Markdown. Use minimal bullet points only" +
 	"content already has a list-like structure. Keep paragraph structure. Return only the improved note text.";
 
 function buildAiUserPrompt(content, instructions) {
 	const promptText = (instructions || "").trim();
 	return (
-		"Rewrite the following note so it is clearer and more concise while preserving meaning. " +
-		"Format the output in Markdown. Use minimal bullet points\u2014only use them if the original " +
-		"content already has a list-like structure. Keep paragraph structure if present. " +
 		"Return only the improved note text.\n\n" +
 		`User instructions: ${promptText || "No extra instructions."}\n\n` +
 		`Original note:\n${(content || "").trim() || "[empty note]"}`
