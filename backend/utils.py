@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -275,7 +276,25 @@ def rewrite_with_openai(content: str, instructions: str = "") -> str:
 	final_text = (response.choices[0].message.content or "").strip()
 
 	if not final_text:
-		raise RuntimeError("OpenAI returned an empty rewrite.")
+		time.sleep(2)
+		response = client.chat.completions.create(
+			model=model,
+			messages=[
+				{
+					"role": "system",
+					"content": "You are a precise writing assistant. Improve clarity, grammar, and flow without adding new facts.",
+				},
+				{
+					"role": "user",
+					"content": user_prompt,
+				},
+			],
+			timeout=45,
+		)
+		final_text = (response.choices[0].message.content or "").strip()
+
+	if not final_text:
+		raise RuntimeError("OpenAI returned an empty rewrite. Try again later.")
 
 	return final_text
 

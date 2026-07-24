@@ -165,3 +165,9 @@ export async function saveNoteToBucket(noteId) {
         method: "POST",
     });
 }
+
+export async function deleteVersion(noteId, versionId) {
+    return requestJson(`/notes/${noteId}/versions/${versionId}`, {
+        method: "DELETE",
+    });
+}

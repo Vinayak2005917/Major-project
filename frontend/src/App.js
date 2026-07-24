@@ -15,6 +15,7 @@ import {
   createNote,
   createRewriteJob,
   deleteNote,
+  deleteVersion,
   getStoredSession,
   getNote,
   getNoteVersions,
@@ -464,6 +465,33 @@ export function App() {
     }
   }
 
+  async function handleDeleteVersion(versionId) {
+    if (!activeNote) {
+      return;
+    }
+
+    try {
+      setErrorMessage("");
+      await deleteVersion(activeNote.id, versionId);
+
+      setVersionsByNote((prevState) => {
+        const current = prevState[activeNote.id] || [];
+        return {
+          ...prevState,
+          [activeNote.id]: current.filter((entry) => entry.id !== versionId),
+        };
+      });
+
+      if (selectedVersionId === versionId) {
+        setSelectedVersionId(null);
+      }
+    } catch (error) {
+      setErrorMessage(
+        error && error.message ? error.message : "Failed to delete version.",
+      );
+    }
+  }
+
   async function handleAiRewrite() {
     if (!activeNote || isAiRewritingRef.current) {
       return;
@@ -483,8 +511,9 @@ export function App() {
       }
 
       let result = null;
-      for (let attempt = 0; attempt < 24; attempt += 1) {
-        await wait(900);
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        const delay = Math.min(1000 + attempt * 300, 3000);
+        await wait(delay);
         const polled = await getRewriteJob(jobId);
 
         if (
@@ -676,6 +705,7 @@ export function App() {
         selectedVersionId,
         onSelectVersion: handleSelectVersion,
         onRestoreVersion: handleRestoreVersion,
+        onDeleteVersion: handleDeleteVersion,
         isAiRewriting,
       }),
     ),

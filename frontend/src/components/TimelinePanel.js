@@ -1,5 +1,5 @@
 import React from "https://esm.sh/react@18.2.0?target=es2019";
-import { Bot, History, RotateCcw, UserRound } from "https://esm.sh/lucide-react@0.453.0?target=es2019&deps=react@18.2.0";
+import { Bot, History, RotateCcw, Trash2, UserRound } from "https://esm.sh/lucide-react@0.453.0?target=es2019&deps=react@18.2.0";
 import { summarizeText } from "../utils/versioning.js";
 
 function formatTime(timestamp) {
@@ -13,7 +13,7 @@ function formatTime(timestamp) {
     });
 }
 
-export function TimelinePanel({ versions, selectedVersionId, onSelectVersion, onRestoreVersion, isAiRewriting }) {
+export function TimelinePanel({ versions, selectedVersionId, onSelectVersion, onRestoreVersion, onDeleteVersion, isAiRewriting }) {
     const entries = Array.isArray(versions) ? versions : [];
 
     return React.createElement("aside", {
@@ -74,16 +74,30 @@ export function TimelinePanel({ versions, selectedVersionId, onSelectVersion, on
                                 ),
                                 React.createElement("p", { className: "timeline-preview text-xs leading-5 text-zinc-300" }, summarizeText(entry.content, 110))
                             ),
-                            React.createElement("button", {
-                                type: "button",
-                                onClick: (event) => {
-                                    event.stopPropagation();
-                                    onRestoreVersion(entry.id);
+                            React.createElement("div", { className: "mt-1 flex items-center gap-1" },
+                                React.createElement("button", {
+                                    type: "button",
+                                    onClick: (event) => {
+                                        event.stopPropagation();
+                                        onRestoreVersion(entry.id);
+                                    },
+                                    className: "inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] text-zinc-400 opacity-0 transition duration-150 hover:bg-zinc-800 hover:text-zinc-200 group-hover:opacity-100",
                                 },
-                                className: "mt-1 inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] text-zinc-400 opacity-0 transition duration-150 hover:bg-zinc-800 hover:text-zinc-200 group-hover:opacity-100",
-                            },
-                                React.createElement(RotateCcw, { size: 11 }),
-                                React.createElement("span", null, "Restore")
+                                    React.createElement(RotateCcw, { size: 11 }),
+                                    React.createElement("span", null, "Restore")
+                                ),
+                                React.createElement("button", {
+                                    type: "button",
+                                    onClick: (event) => {
+                                        event.stopPropagation();
+                                        onDeleteVersion(entry.id);
+                                    },
+                                    className: "inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] text-rose-400 opacity-0 transition duration-150 hover:bg-rose-500/15 hover:text-rose-300 group-hover:opacity-100",
+                                    "aria-label": "Delete version",
+                                },
+                                    React.createElement(Trash2, { size: 11 }),
+                                    React.createElement("span", null, "Delete")
+                                )
                             )
                         );
                     })

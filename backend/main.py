@@ -366,6 +366,35 @@ def get_note_versions(
 	return {"versions": list_response.data or []}
 
 
+@app.delete("/notes/{note_id}/versions/{version_id}")
+def delete_note_version(
+	note_id: str,
+	version_id: str,
+	authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> dict:
+	client = require_supabase()
+	user_id = resolve_user_id(authorization)
+	safe_note_id = validate_uuid(note_id, "note_id")
+	safe_version_id = validate_uuid(version_id, "version_id")
+	fetch_note_for_user(client, safe_note_id, user_id)
+
+	version_response = (
+		client.table("note_versions")
+		.select("id")
+		.eq("id", safe_version_id)
+		.eq("note_id", safe_note_id)
+		.limit(1)
+		.execute()
+	)
+
+	if not version_response.data:
+		raise HTTPException(status_code=404, detail="Version not found.")
+
+	client.table("note_versions").delete().eq("id", safe_version_id).eq("note_id", safe_note_id).execute()
+
+	return {"ok": True, "id": safe_version_id}
+
+
 @app.post("/notes/{note_id}/rewrite")
 def create_rewrite_job(
 	note_id: str,
