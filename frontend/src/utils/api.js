@@ -171,3 +171,64 @@ export async function deleteVersion(noteId, versionId) {
         method: "DELETE",
     });
 }
+
+export async function streamRewrite(noteId, instructions, callbacks, signal) {
+    const token = getAccessTokenOrNull();
+    if (!token) throw new Error("Not authenticated.");
+
+    const response = await fetch(`${API_BASE}/notes/${noteId}/rewrite/stream`, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            "ngrok-skip-browser-warning": "true",
+        },
+        body: JSON.stringify({ instructions: instructions || "" }),
+        signal,
+    });
+
+    if (!response.ok) {
+        const text = await response.text();
+        try {
+            const parsed = JSON.parse(text);
+            throw new Error(parsed.detail || text);
+        } catch (e) {
+            if (e instanceof SyntaxError) throw new Error(text);
+            throw e;
+        }
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+            if (line.startsWith("data: ")) {
+                const raw = line.slice(6).trim();
+                if (!raw) continue;
+                try {
+                    const parsed = JSON.parse(raw);
+                    if (parsed.token && callbacks.onToken) {
+                        callbacks.onToken(parsed.token);
+                    } else if (parsed.done && callbacks.onDone) {
+                        await callbacks.onDone(parsed);
+                        return;
+                    } else if (parsed.error) {
+                        throw new Error(parsed.message || "Rewrite failed.");
+                    }
+                } catch (e) {
+                    if (e instanceof SyntaxError) continue;
+                    throw e;
+                }
+            }
+        }
+    }
+}

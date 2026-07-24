@@ -1,3 +1,4 @@
+import json
 import os
 from typing import Optional
 import uvicorn
@@ -5,6 +6,7 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from httpx import Client as HttpxClient
 from pydantic import BaseModel, Field
 from supabase import Client, ClientOptions, create_client
@@ -13,6 +15,7 @@ from utils import (
 	configure_runtime,
 	fetch_note_for_user,
 	is_timeout_like_error,
+	rewrite_with_openai_streaming,
 	new_uuid,
 	parse_bearer_token,
 	parse_origins,
@@ -479,6 +482,45 @@ def get_rewrite_job(
 		"output": job.get("output") or "",
 		"updated_at": job.get("updated_at"),
 	}
+
+
+@app.post("/notes/{note_id}/rewrite/stream")
+def rewrite_note_stream(
+	note_id: str,
+	payload: RewriteRequestIn,
+	authorization: Optional[str] = Header(default=None, alias="Authorization"),
+):
+	client = require_supabase()
+	user_id = resolve_user_id(authorization)
+	safe_note_id = validate_uuid(note_id, "note_id")
+	note = fetch_note_for_user(client, safe_note_id, user_id)
+	content = note.get("content") or ""
+
+	def event_stream():
+		full_output = ""
+		try:
+			for token in rewrite_with_openai_streaming(content, payload.instructions or ""):
+				full_output += token
+				yield f"data: {json.dumps({'token': token})}\n\n"
+
+			now_iso = utc_now_iso()
+			(
+				client.table("notes")
+				.update({"content": full_output, "updated_at": now_iso})
+				.eq("id", safe_note_id)
+				.eq("user_id", user_id)
+				.execute()
+			)
+
+			client.table("note_versions").insert(
+				{"id": new_uuid(), "note_id": safe_note_id, "content": full_output}
+			).execute()
+
+			yield f"data: {json.dumps({'done': True, 'note_id': safe_note_id, 'updated_at': now_iso})}\n\n"
+		except Exception as exc:
+			yield f"data: {json.dumps({'error': True, 'message': str(exc)})}\n\n"
+
+	return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.post("/notes/{note_id}/save")

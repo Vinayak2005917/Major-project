@@ -13,27 +13,20 @@ import { AuthScreen } from "./components/AuthScreen.js";
 import {
   clearAuthSession,
   createNote,
-  createRewriteJob,
   deleteNote,
   deleteVersion,
   getStoredSession,
   getNote,
   getNoteVersions,
-  getRewriteJob,
   saveNoteToBucket,
   login,
   listNotes,
   me,
   setAuthSession,
   signup,
+  streamRewrite,
   updateNote,
 } from "./utils/api.js";
-
-function wait(ms) {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-}
 
 function toTimestamp(value) {
   const parsed = Date.parse(value || "");
@@ -90,6 +83,7 @@ export function App() {
   const [selectedVersionId, setSelectedVersionId] = useState(null);
   const [isAiRewriting, setAiRewriting] = useState(false);
   const isAiRewritingRef = useRef(false);
+  const abortControllerRef = useRef(null);
   const [isSavingBucket, setSavingBucket] = useState(false);
   const [isLoadingNotes, setLoadingNotes] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -277,6 +271,11 @@ export function App() {
   }
 
   function handleLogout() {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
     clearAuthSession();
     setSession(null);
     setNotes([]);
@@ -322,6 +321,11 @@ export function App() {
   }
 
   function handleSelectNote(noteId) {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
     setActiveId(noteId);
     setSelectedVersionId(null);
 
@@ -502,61 +506,45 @@ export function App() {
     isAiRewritingRef.current = true;
     setAiRewriting(true);
 
+    const noteId = activeNote.id;
+    const noteTitle = activeNote.title;
+    abortControllerRef.current = new AbortController();
+    let accumulated = "";
+
     try {
-      const job = await createRewriteJob(activeNote.id, "");
-      const jobId = job && job.job_id ? job.job_id : "";
-
-      if (!jobId) {
-        throw new Error("Rewrite job did not return job_id.");
-      }
-
-      let result = null;
-      for (let attempt = 0; attempt < 30; attempt += 1) {
-        const delay = Math.min(1000 + attempt * 300, 3000);
-        await wait(delay);
-        const polled = await getRewriteJob(jobId);
-
-        if (
-          polled &&
-          (polled.status === "done" || polled.status === "failed")
-        ) {
-          result = polled;
-          break;
-        }
-      }
-
-      if (!result) {
-        throw new Error("Rewrite timed out. Try again.");
-      }
-
-      if (result.status !== "done") {
-        throw new Error(
-          typeof result.output === "string" && result.output
-            ? result.output
-            : "Rewrite job failed.",
-        );
-      }
-
-      const refreshed = await getNote(activeNote.id);
-      const normalized = normalizeNote(refreshed);
-
-      setNotes((prevNotes) =>
-        prevNotes.map((note) =>
-          note.id === normalized.id ? { ...note, ...normalized } : note,
-        ),
+      await streamRewrite(
+        noteId,
+        "",
+        {
+          onToken: (token) => {
+            accumulated += token;
+            setNotes((prev) =>
+              prev.map((n) =>
+                n.id === noteId
+                  ? { ...n, content: accumulated, updatedAt: Date.now() }
+                  : n,
+              ),
+            );
+          },
+          onDone: async () => {
+            lastSyncedRef.current[noteId] = {
+              title: noteTitle,
+              content: accumulated,
+            };
+            await fetchAndStoreVersions(noteId, noteTitle, true);
+          },
+        },
+        abortControllerRef.current.signal,
       );
-
-      lastSyncedRef.current[normalized.id] = {
-        title: normalized.title,
-        content: normalized.content,
-      };
-
-      await fetchAndStoreVersions(normalized.id, normalized.title, true);
     } catch (error) {
+      if (error && error.name === "AbortError") {
+        return;
+      }
       setErrorMessage(
         error && error.message ? error.message : "AI rewrite failed.",
       );
     } finally {
+      abortControllerRef.current = null;
       isAiRewritingRef.current = false;
       setAiRewriting(false);
     }

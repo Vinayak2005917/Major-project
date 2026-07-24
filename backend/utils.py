@@ -235,6 +235,25 @@ def simulated_ai_rewrite(content: str, instructions: str = "") -> str:
 	return "\n\n".join(polished)
 
 
+SYSTEM_PROMPT = (
+	"You are a precise writing assistant. Improve clarity, grammar, and flow without adding new facts. "
+	"Format the output in clean Markdown. Use minimal bullet points\u2014only use them if the original "
+	"content already has a list-like structure. Keep paragraph structure. Return only the improved note text."
+)
+
+
+def _build_rewrite_prompt(content: str, instructions: str) -> str:
+	prompt_text = (instructions or "").strip()
+	return (
+		"Rewrite the following note so it is clearer and more concise while preserving meaning. "
+		"Format the output in Markdown. Use minimal bullet points\u2014only use them if the original "
+		"content already has a list-like structure. Keep paragraph structure if present. "
+		"Return only the improved note text.\n\n"
+		f"User instructions: {prompt_text if prompt_text else 'No extra instructions.'}\n\n"
+		f"Original note:\n{(content or '').strip() or '[empty note]'}"
+	)
+
+
 def rewrite_with_openai(content: str, instructions: str = "") -> str:
 	from openai import OpenAI
 
@@ -243,15 +262,7 @@ def rewrite_with_openai(content: str, instructions: str = "") -> str:
 	if not api_key:
 		raise RuntimeError("OPENAI_API_KEY is missing. Add it to backend environment variables.")
 
-	safe_content = (content or "").strip()
-	prompt_text = (instructions or "").strip()
-
-	user_prompt = (
-		"Rewrite the following note so it is clearer and more concise while preserving meaning. "
-		"Keep paragraph structure if present. Return only the improved note text.\n\n"
-		f"User instructions: {prompt_text if prompt_text else 'No extra instructions.'}\n\n"
-		f"Original note:\n{safe_content if safe_content else '[empty note]'}"
-	)
+	user_prompt = _build_rewrite_prompt(content, instructions)
 
 	client = OpenAI(
 		base_url="https://api.aicredits.in/v1",
@@ -261,14 +272,8 @@ def rewrite_with_openai(content: str, instructions: str = "") -> str:
 	response = client.chat.completions.create(
 		model=model,
 		messages=[
-			{
-				"role": "system",
-				"content": "You are a precise writing assistant. Improve clarity, grammar, and flow without adding new facts.",
-			},
-			{
-				"role": "user",
-				"content": user_prompt,
-			},
+			{"role": "system", "content": SYSTEM_PROMPT},
+			{"role": "user", "content": user_prompt},
 		],
 		timeout=45,
 	)
@@ -280,14 +285,8 @@ def rewrite_with_openai(content: str, instructions: str = "") -> str:
 		response = client.chat.completions.create(
 			model=model,
 			messages=[
-				{
-					"role": "system",
-					"content": "You are a precise writing assistant. Improve clarity, grammar, and flow without adding new facts.",
-				},
-				{
-					"role": "user",
-					"content": user_prompt,
-				},
+				{"role": "system", "content": SYSTEM_PROMPT},
+				{"role": "user", "content": user_prompt},
 			],
 			timeout=45,
 		)
@@ -297,6 +296,42 @@ def rewrite_with_openai(content: str, instructions: str = "") -> str:
 		raise RuntimeError("OpenAI returned an empty rewrite. Try again later.")
 
 	return final_text
+
+
+def rewrite_with_openai_streaming(content: str, instructions: str = ""):
+	"""Generator that yields tokens from OpenAI streaming."""
+	from openai import OpenAI
+
+	api_key, model = get_openai_config()
+
+	if not api_key:
+		raise RuntimeError("OPENAI_API_KEY is missing. Add it to backend environment variables.")
+
+	user_prompt = _build_rewrite_prompt(content, instructions)
+
+	client = OpenAI(
+		base_url="https://api.aicredits.in/v1",
+		api_key=api_key,
+	)
+
+	response = client.chat.completions.create(
+		model=model,
+		messages=[
+			{"role": "system", "content": SYSTEM_PROMPT},
+			{"role": "user", "content": user_prompt},
+		],
+		stream=True,
+		timeout=60,
+	)
+
+	for chunk in response:
+		choices = chunk.choices
+		if not choices:
+			continue
+		delta = choices[0].delta
+		token = (delta.content or "") if delta else ""
+		if token:
+			yield token
 
 
 def complete_rewrite_job(job_id: str, note_id: str, user_id: str, instructions: str = "") -> None:
