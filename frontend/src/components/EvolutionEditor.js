@@ -1,5 +1,5 @@
 import React, { useState } from "https://esm.sh/react@18.2.0?target=es2019";
-import { Eye, Sparkles, X } from "https://esm.sh/lucide-react@0.453.0?target=es2019&deps=react@18.2.0";
+import { Eye, X } from "https://esm.sh/lucide-react@0.453.0?target=es2019&deps=react@18.2.0";
 
 export function EvolutionEditor({ note, previewVersion, onTitleChange, onContentChange, onExitPreview, isStreaming }) {
     const [isFocused, setFocused] = useState(false);
@@ -48,27 +48,8 @@ export function EvolutionEditor({ note, previewVersion, onTitleChange, onContent
                 })
             ),
             React.createElement("div", {
-                className: `relative flex min-h-0 flex-1 flex-col pt-8 ${isStreaming ? "streaming-active" : ""}`,
+                className: "flex min-h-0 flex-1 flex-col pt-8",
             },
-                isStreaming
-                    ? React.createElement("div", {
-                        className: "pointer-events-none absolute -inset-x-3 -inset-y-3 z-20 rounded-lg border border-sky-400/30 bg-sky-500/5 backdrop-blur-[1px]",
-                        style: {
-                            animation: "streamPulse 1.6s ease-in-out infinite",
-                        },
-                    })
-                    : null,
-                isStreaming
-                    ? React.createElement("div", {
-                        className: "pointer-events-none absolute right-2 top-10 z-30 inline-flex items-center gap-1.5 rounded-md border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-xs text-sky-200 shadow-sm",
-                        style: {
-                            animation: "streamFadeIn 0.3s ease-out",
-                        },
-                    },
-                        React.createElement(Sparkles, { size: 12 }),
-                        React.createElement("span", null, "Evolving\u2026")
-                    )
-                    : null,
                 React.createElement("textarea", {
                     value: typeof displayContent === "string" ? displayContent : "",
                     readOnly: previewing,
@@ -76,7 +57,7 @@ export function EvolutionEditor({ note, previewVersion, onTitleChange, onContent
                     onBlur: () => setFocused(false),
                     onChange: (event) => onContentChange(event.target.value),
                     placeholder: "Write freely. Your thinking will evolve here.",
-                    className: `w-full min-h-full resize-none overflow-hidden border-0 bg-transparent p-0 text-[1.03rem] leading-8 transition-colors duration-300 placeholder:text-zinc-500 focus:outline-none ${isStreaming ? "text-sky-50" : "text-zinc-200"}`,
+                    className: `w-full min-h-full resize-none overflow-hidden border-0 bg-transparent p-0 text-[1.03rem] leading-8 placeholder:text-zinc-500 focus:outline-none transition-colors duration-500 ${isStreaming ? "text-sky-50" : "text-zinc-200"}`,
                 })
             )
         )
