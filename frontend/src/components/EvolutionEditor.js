@@ -1,26 +1,11 @@
-import React, { useEffect, useRef, useState } from "https://esm.sh/react@18.2.0?target=es2019";
-import { Eye, X } from "https://esm.sh/lucide-react@0.453.0?target=es2019&deps=react@18.2.0";
+import React, { useState } from "https://esm.sh/react@18.2.0?target=es2019";
+import { Eye, Sparkles, X } from "https://esm.sh/lucide-react@0.453.0?target=es2019&deps=react@18.2.0";
 
-export function EvolutionEditor({ note, previewVersion, onTitleChange, onContentChange, onExitPreview }) {
+export function EvolutionEditor({ note, previewVersion, onTitleChange, onContentChange, onExitPreview, isStreaming }) {
     const [isFocused, setFocused] = useState(false);
-    const textareaRef = useRef(null);
     const previewing = Boolean(previewVersion);
     const displayTitle = note ? (previewing ? previewVersion.title : note.title) : "";
     const displayContent = note ? (previewing ? previewVersion.content : note.content) : "";
-
-    function resizeTextarea() {
-        const target = textareaRef.current;
-        if (!target) {
-            return;
-        }
-
-        target.style.height = "auto";
-        target.style.height = `${target.scrollHeight}px`;
-    }
-
-    useEffect(() => {
-        resizeTextarea();
-    }, [displayContent, previewing]);
 
     if (!note) {
         return React.createElement("section", { className: "flex flex-1 items-center justify-center text-zinc-500" },
@@ -29,9 +14,9 @@ export function EvolutionEditor({ note, previewVersion, onTitleChange, onContent
     }
 
     return React.createElement("section", {
-        className: `editor-scroll-area panel-scroll relative flex-1 overflow-y-auto scroll-smooth transition-shadow duration-200 ${isFocused && !previewing ? "shadow-[inset_0_0_0_1px_rgba(96,165,250,0.35)]" : ""}`,
+        className: `editor-scroll-area panel-scroll relative flex flex-1 flex-col overflow-y-auto scroll-smooth transition-shadow duration-200 ${isFocused && !previewing ? "shadow-[inset_0_0_0_1px_rgba(96,165,250,0.35)]" : ""}`,
     },
-        React.createElement("div", { className: "editor-canvas mx-auto w-full max-w-[860px] px-6 pb-16 md:px-12" },
+        React.createElement("div", { className: "editor-canvas flex min-h-0 flex-1 flex-col mx-auto w-full max-w-[860px] px-6 md:px-12" },
             React.createElement("div", {
                 className: "sticky top-0 z-10 -mx-6 border-b border-zinc-800/70 bg-[#0d0f12]/95 px-6 pb-5 pt-8 backdrop-blur-sm md:-mx-12 md:px-12",
             },
@@ -62,19 +47,36 @@ export function EvolutionEditor({ note, previewVersion, onTitleChange, onContent
                     className: "w-full border-0 bg-transparent p-0 text-[2.35rem] font-semibold tracking-tight text-zinc-50 placeholder:text-zinc-600 focus:outline-none md:text-[2.6rem]",
                 })
             ),
-            React.createElement("div", { className: "pt-8" },
+            React.createElement("div", {
+                className: `relative flex min-h-0 flex-1 flex-col pt-8 ${isStreaming ? "streaming-active" : ""}`,
+            },
+                isStreaming
+                    ? React.createElement("div", {
+                        className: "pointer-events-none absolute -inset-x-3 -inset-y-3 z-20 rounded-lg border border-sky-400/30 bg-sky-500/5 backdrop-blur-[1px]",
+                        style: {
+                            animation: "streamPulse 1.6s ease-in-out infinite",
+                        },
+                    })
+                    : null,
+                isStreaming
+                    ? React.createElement("div", {
+                        className: "pointer-events-none absolute right-2 top-10 z-30 inline-flex items-center gap-1.5 rounded-md border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-xs text-sky-200 shadow-sm",
+                        style: {
+                            animation: "streamFadeIn 0.3s ease-out",
+                        },
+                    },
+                        React.createElement(Sparkles, { size: 12 }),
+                        React.createElement("span", null, "Evolving\u2026")
+                    )
+                    : null,
                 React.createElement("textarea", {
-                    ref: textareaRef,
                     value: typeof displayContent === "string" ? displayContent : "",
                     readOnly: previewing,
                     onFocus: () => setFocused(true),
                     onBlur: () => setFocused(false),
-                    onChange: (event) => {
-                        resizeTextarea();
-                        onContentChange(event.target.value);
-                    },
+                    onChange: (event) => onContentChange(event.target.value),
                     placeholder: "Write freely. Your thinking will evolve here.",
-                    className: "w-full resize-none overflow-hidden border-0 bg-transparent p-0 text-[1.03rem] leading-8 text-zinc-200 placeholder:text-zinc-500 focus:outline-none",
+                    className: `w-full min-h-full resize-none overflow-hidden border-0 bg-transparent p-0 text-[1.03rem] leading-8 transition-colors duration-300 placeholder:text-zinc-500 focus:outline-none ${isStreaming ? "text-sky-50" : "text-zinc-200"}`,
                 })
             )
         )

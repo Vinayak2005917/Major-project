@@ -84,6 +84,7 @@ export function App() {
   const [isAiRewriting, setAiRewriting] = useState(false);
   const isAiRewritingRef = useRef(false);
   const abortControllerRef = useRef(null);
+  const [isStreaming, setStreaming] = useState(false);
   const [isSavingBucket, setSavingBucket] = useState(false);
   const [isLoadingNotes, setLoadingNotes] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -510,13 +511,21 @@ export function App() {
     const noteTitle = activeNote.title;
     abortControllerRef.current = new AbortController();
     let accumulated = "";
+    const startTs = performance.now();
+    let firstTokenLogged = false;
 
     try {
+      setStreaming(true);
       await streamRewrite(
         noteId,
         "",
         {
           onToken: (token) => {
+            if (!firstTokenLogged) {
+              firstTokenLogged = true;
+              const elapsed = ((performance.now() - startTs) / 1000).toFixed(2);
+              console.log(`[rewrite] First token arrived in ${elapsed}s`);
+            }
             accumulated += token;
             setNotes((prev) =>
               prev.map((n) =>
@@ -547,6 +556,11 @@ export function App() {
       abortControllerRef.current = null;
       isAiRewritingRef.current = false;
       setAiRewriting(false);
+      setStreaming(false);
+      if (firstTokenLogged) {
+        const total = ((performance.now() - startTs) / 1000).toFixed(2);
+        console.log(`[rewrite] Stream complete in ${total}s`);
+      }
     }
   }
 
@@ -686,6 +700,7 @@ export function App() {
           onTitleChange: handleTitleChange,
           onContentChange: handleContentChange,
           onExitPreview: handleExitPreview,
+          isStreaming,
         }),
       ),
       React.createElement(TimelinePanel, {
