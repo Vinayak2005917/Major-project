@@ -1,7 +1,8 @@
-/ML
 /backend/backend_venv
 /backend/__pycache__
 /backend/.env
 /backend/.env.example
 /frontend/node_modules
 /frontend/dist
+
+paper.tex

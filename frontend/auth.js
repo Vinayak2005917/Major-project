@@ -114,27 +114,22 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             const response = await requestAuth("/auth/signup", { email, password });
-            const maybeToken = response && response.session ? response.session.access_token : null;
+            const session = response && response.session;
+            const maybeToken = session ? session.access_token : null;
 
             if (maybeToken) {
                 window.localStorage.setItem(
                     SESSION_KEY,
                     JSON.stringify({
-                        access_token: response.session.access_token,
-                        refresh_token: response.session.refresh_token,
+                        access_token: session.access_token,
+                        refresh_token: session.refresh_token,
                         user: response.user,
                     }),
                 );
-                showFeedback(feedback, "Account created. Redirecting...", "success");
-                window.location.href = "./index.html";
-                return;
             }
 
-            showFeedback(
-                feedback,
-                "Signup successful. Check your email for verification, then login.",
-                "success",
-            );
+            showFeedback(feedback, "Account created. Redirecting...", "success");
+            window.location.href = "./index.html";
         } catch (error) {
             const message = error && error.message ? error.message : "Authentication request failed.";
             showFeedback(feedback, message, "error");

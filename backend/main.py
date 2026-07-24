@@ -5,20 +5,20 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from httpx import Client as HttpxClient
 from pydantic import BaseModel, Field
-from supabase import Client, create_client
+from supabase import Client, ClientOptions, create_client
 from utils import (
 	complete_rewrite_job,
 	configure_runtime,
 	fetch_note_for_user,
+	is_timeout_like_error,
 	new_uuid,
 	parse_bearer_token,
 	parse_origins,
 	require_auth_supabase,
 	require_supabase,
 	resolve_user_id,
-	sentence_case,
-	simulated_ai_rewrite,
 	upload_note_snapshot_to_bucket,
 	utc_now_iso,
 	validate_uuid,
@@ -32,17 +32,27 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "").strip()
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
 SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "Notes").strip() or "Notes"
+SUPABASE_HTTP_TIMEOUT = float(os.getenv("SUPABASE_HTTP_TIMEOUT", "20").strip() or "20")
 ALLOWED_ORIGINS = parse_origins(os.getenv("ALLOWED_ORIGINS", "*"))
 
 SUPABASE_BACKEND_KEY = SUPABASE_SERVICE_ROLE_KEY or SUPABASE_KEY
 
+
+def build_supabase_client_options() -> ClientOptions:
+	httpx_client = HttpxClient(timeout=SUPABASE_HTTP_TIMEOUT)
+	return ClientOptions(httpx_client=httpx_client, postgrest_client_timeout=SUPABASE_HTTP_TIMEOUT)
+
 supabase: Optional[Client] = None
 if SUPABASE_URL and SUPABASE_BACKEND_KEY:
-	supabase = create_client(SUPABASE_URL, SUPABASE_BACKEND_KEY)
+	supabase = create_client(SUPABASE_URL, SUPABASE_BACKEND_KEY, options=build_supabase_client_options())
 
 auth_supabase: Optional[Client] = None
 if SUPABASE_URL and (SUPABASE_ANON_KEY or SUPABASE_KEY):
-	auth_supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY or SUPABASE_KEY)
+	auth_supabase = create_client(
+		SUPABASE_URL,
+		SUPABASE_ANON_KEY or SUPABASE_KEY,
+		options=build_supabase_client_options(),
+	)
 
 configure_runtime(
 	supabase_client=supabase,
@@ -98,6 +108,12 @@ def auth_signup(payload: AuthSignUpIn) -> dict:
 	try:
 		response = client.auth.sign_up({"email": payload.email.strip().lower(), "password": payload.password})
 	except Exception as exc:  # noqa: BLE001
+		if is_timeout_like_error(exc):
+			raise HTTPException(
+				status_code=503,
+				detail="Supabase auth service timed out during signup. Verify SUPABASE_URL/network and retry.",
+			) from exc
+
 		raise HTTPException(status_code=400, detail=f"Sign up failed: {str(exc)}") from exc
 
 	user = getattr(response, "user", None)
@@ -124,7 +140,13 @@ def auth_login(payload: AuthLoginIn) -> dict:
 		response = client.auth.sign_in_with_password(
 			{"email": payload.email.strip().lower(), "password": payload.password}
 		)
-	except Exception as exc:  # noqa: BLE001
+	except Exception as exc:
+		if is_timeout_like_error(exc):
+			raise HTTPException(
+				status_code=503,
+				detail="Supabase auth service timed out during login. Verify SUPABASE_URL/network and retry.",
+			) from exc
+
 		raise HTTPException(status_code=401, detail=f"Login failed: {str(exc)}") from exc
 
 	user = getattr(response, "user", None)
@@ -154,6 +176,12 @@ def auth_me(authorization: Optional[str] = Header(default=None, alias="Authoriza
 	try:
 		response = client.auth.get_user(bearer_token)
 	except Exception as exc:  # noqa: BLE001
+		if is_timeout_like_error(exc):
+			raise HTTPException(
+				status_code=503,
+				detail="Supabase auth service timed out while fetching user profile. Verify SUPABASE_URL/network and retry.",
+			) from exc
+
 		raise HTTPException(status_code=401, detail="Invalid or expired access token.") from exc
 
 	user = getattr(response, "user", None)

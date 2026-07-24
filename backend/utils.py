@@ -3,8 +3,6 @@ import json
 import re
 import uuid
 from datetime import datetime, timezone
-from urllib import error as urllib_error
-from urllib import request as urllib_request
 from typing import Optional
 
 from fastapi import HTTPException
@@ -16,9 +14,9 @@ SUPABASE_CLIENT: Optional[Client] = None
 AUTH_SUPABASE_CLIENT: Optional[Client] = None
 
 
-def get_openrouter_config() -> tuple[str, str]:
-	api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-	model = os.getenv("OPENROUTER_MODEL", "openrouter/auto").strip() or "openrouter/auto"
+def get_openai_config() -> tuple[str, str]:
+	api_key = os.getenv("OPENAI_API_KEY", "").strip()
+	model = os.getenv("MODEL", "openai/gpt-5-nano").strip() or "openai/gpt-5-nano"
 	return api_key, model
 
 
@@ -90,6 +88,20 @@ def parse_bearer_token(authorization: Optional[str]) -> Optional[str]:
 	return token.strip()
 
 
+def is_timeout_like_error(exc: Exception) -> bool:
+	message = str(exc).strip().lower()
+	if not message:
+		return False
+
+	timeout_signals = (
+		"timed out",
+		"timeout",
+		"readtimeout",
+		"connecttimeout",
+	)
+	return any(signal in message for signal in timeout_signals)
+
+
 def resolve_user_id(authorization: Optional[str]) -> str:
 	client = require_auth_supabase()
 	bearer_token = parse_bearer_token(authorization)
@@ -99,6 +111,12 @@ def resolve_user_id(authorization: Optional[str]) -> str:
 	try:
 		user_response = client.auth.get_user(bearer_token)
 	except Exception as exc:  # noqa: BLE001
+		if is_timeout_like_error(exc):
+			raise HTTPException(
+				status_code=503,
+				detail="Supabase auth service timed out while validating access token. Verify SUPABASE_URL/network and retry.",
+			) from exc
+
 		raise HTTPException(status_code=401, detail="Invalid or expired access token.") from exc
 
 	user = getattr(user_response, "user", None)
@@ -216,14 +234,13 @@ def simulated_ai_rewrite(content: str, instructions: str = "") -> str:
 	return "\n\n".join(polished)
 
 
-def rewrite_with_openrouter(content: str, instructions: str = "") -> str:
-	openrouter_api_key, openrouter_model = get_openrouter_config()
+def rewrite_with_openai(content: str, instructions: str = "") -> str:
+	from openai import OpenAI
 
-	if not openrouter_api_key:
-		raise RuntimeError("OPENROUTER_API_KEY is missing. Add it to backend environment variables.")
+	api_key, model = get_openai_config()
 
-	openrouter_referer = "http://localhost:8000"
-	openrouter_title = "Neurodapt"
+	if not api_key:
+		raise RuntimeError("OPENAI_API_KEY is missing. Add it to backend environment variables.")
 
 	safe_content = (content or "").strip()
 	prompt_text = (instructions or "").strip()
@@ -235,9 +252,14 @@ def rewrite_with_openrouter(content: str, instructions: str = "") -> str:
 		f"Original note:\n{safe_content if safe_content else '[empty note]'}"
 	)
 
-	body = {
-		"model": openrouter_model,
-		"messages": [
+	client = OpenAI(
+		base_url="https://api.aicredits.in/v1",
+		api_key=api_key,
+	)
+
+	response = client.chat.completions.create(
+		model=model,
+		messages=[
 			{
 				"role": "system",
 				"content": "You are a precise writing assistant. Improve clarity, grammar, and flow without adding new facts.",
@@ -247,40 +269,13 @@ def rewrite_with_openrouter(content: str, instructions: str = "") -> str:
 				"content": user_prompt,
 			},
 		],
-	}
-
-	req = urllib_request.Request(
-		url="https://openrouter.ai/api/v1/chat/completions",
-		data=json.dumps(body).encode("utf-8"),
-		headers={
-			"Authorization": f"Bearer {openrouter_api_key}",
-			"Content-Type": "application/json",
-			"HTTP-Referer": openrouter_referer,
-			"X-Title": openrouter_title,
-		},
-		method="POST",
+		timeout=45,
 	)
 
-	try:
-		with urllib_request.urlopen(req, timeout=45) as response:  # noqa: S310
-			raw = response.read().decode("utf-8")
-	except urllib_error.HTTPError as exc:
-		error_raw = exc.read().decode("utf-8", errors="replace")
-		raise RuntimeError(f"OpenRouter HTTP {exc.code}: {error_raw}") from exc
-	except urllib_error.URLError as exc:
-		raise RuntimeError(f"OpenRouter network error: {exc.reason}") from exc
-
-	parsed = json.loads(raw)
-	choices = parsed.get("choices") if isinstance(parsed, dict) else None
-	if not isinstance(choices, list) or not choices:
-		raise RuntimeError("OpenRouter returned no choices.")
-
-	message = choices[0].get("message") if isinstance(choices[0], dict) else None
-	content_text = message.get("content") if isinstance(message, dict) else None
-	final_text = (content_text or "").strip()
+	final_text = (response.choices[0].message.content or "").strip()
 
 	if not final_text:
-		raise RuntimeError("OpenRouter returned an empty rewrite.")
+		raise RuntimeError("OpenAI returned an empty rewrite.")
 
 	return final_text
 
@@ -290,7 +285,7 @@ def complete_rewrite_job(job_id: str, note_id: str, user_id: str, instructions: 
 
 	try:
 		note = fetch_note_for_user(client, note_id, user_id)
-		updated_content = rewrite_with_openrouter(note.get("content") or "", instructions)
+		updated_content = rewrite_with_openai(note.get("content") or "", instructions)
 		updated_title = (note.get("title") or "Untitled").strip() or "Untitled"
 		now_iso = utc_now_iso()
 
